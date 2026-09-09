@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProjectMonitor – Integrated Project Monitoring Platform</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#EFF6FF',
+              100: '#DBEAFE',
+              200: '#BFDBFE',
+              300: '#93C5FD',
+              400: '#60A5FA',
+              500: '#3B82F6',
+              600: '#2563EB',
+              700: '#1D4ED8',
+              800: '#1E40AF',
+              900: '#1E3A8A',
+              950: '#172554',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel Standalone for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Google Font Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.5); border-radius: 9999px; }
+    @media print {
+      body { background: white !important; color: black !important; }
+      .no-print, aside, nav, header, .role-banner, button { display: none !important; }
+      main { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in { animation: fadeIn 0.25s ease-out forwards; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 antialiased min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useContext, createContext, useMemo, useRef } = React;
+
+    // ==================== APP CONTEXT WITH REST API INTEGRATION ====================
+    const AppContext = createContext();
+
+    const AppProvider = ({ children }) => {
+      const [currentUser, setCurrentUser] = useState(null);
+      const [users, setUsers] = useState([]);
+      const [projects, setProjects] = useState([]);
+      const [milestones, setMilestones] = useState([]);
+      const [tasks, setTasks] = useState([]);
+      const [documents, setDocuments] = useState([]);
+      const [feedback, setFeedback] = useState([]);
+      const [notifications, setNotifications] = useState([]);
+      const [calendarEvents, setCalendarEvents] = useState([]);
+      const [backendOnline, setBackendOnline] = useState(false);
+      const [darkMode, setDarkMode] = useState(false);
+
+      const [currentPage, setCurrentPage] = useState('dashboard');
+      const [selectedProjectId, setSelectedProjectId] = useState('PRJ-101');
+      const [isSearchOpen, setIsSearchOpen] = useState(false);
+      const [toasts, setToasts] = useState([]);
+
+      // Toast manager
+      const addToast = (title, message, type = 'info') => {
+        const id = 't_' + Date.now();
+        setToasts((prev) => [...prev, { id, title, message, type }]);
+        setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
+      };
+
+      const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
+      // Fetch all data from REST API backend
+      const refreshData = async () => {
+        try {
+          const [resHealth, resUsers, resProjects, resMilestones, resTasks, resDocs, resFeedback, resNotifs, resCal] = await Promise.all([
+            fetch('/api/health').then(r => r.json()).catch(() => null),
+            fetch('/api/users').then(r => r.json()).catch(() => []),
+            fetch('/api/projects').then(r => r.json()).catch(() => []),
+            fetch('/api/milestones').then(r => r.json()).catch(() => []),
+            fetch('/api/tasks').then(r => r.json()).catch(() => []),
+            fetch('/api/documents').then(r => r.json()).catch(() => []),
+            fetch('/api/feedback').then(r => r.json()).catch(() => []),
+            fetch('/api/notifications').then(r => r.json()).catch(() => []),
+            fetch('/api/calendar').then(r => r.json()).catch(() => [])
+          ]);
+
+          if (resHealth && resHealth.status === 'online') {
+            setBackendOnline(true);
+          }
+
+          if (Array.isArray(resUsers) && resUsers.length > 0) setUsers(resUsers);
+          if (Array.isArray(resProjects) && resProjects.length > 0) setProjects(resProjects);
+          if (Array.isArray(resMilestones) && resMilestones.length > 0) setMilestones(resMilestones);
+          if (Array.isArray(resTasks) && resTasks.length > 0) setTasks(resTasks);
+          if (Array.isArray(resDocs) && resDocs.length > 0) setDocuments(resDocs);
+          if (Array.isArray(resFeedback) && resFeedback.length > 0) setFeedback(resFeedback);
+          if (Array.isArray(resNotifs) && resNotifs.length > 0) setNotifications(resNotifs);
+          if (Array.isArray(resCal) && resCal.length > 0) setCalendarEvents(resCal);
+
+          // Default current user if not set
+          if (!currentUser && Array.isArray(resUsers) && resUsers.length > 0) {
+            setCurrentUser(resUsers[0]);
+          }
+        } catch (err) {
+          console.warn('REST API not reachable, working in local mode:', err);
+        }
+      };
+
+      useEffect(() => {
+        refreshData();
+        const interval = setInterval(refreshData, 10000); // 10s polling
+        return () => clearInterval(interval);
+      }, []);
+
+      useEffect(() => {
+        if (darkMode) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+      }, [darkMode]);
+
+      const navigateTo = (page, projectId = null) => {
+        if (projectId) setSelectedProjectId(projectId);
+        setCurrentPage(page);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      const loginAs = async (role) => {
+        try {
+          const res = await fetch('/api/auth/switch-role', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role })
+          });
+          const data = await res.json();
+          if (data.user) {
+            setCurrentUser(data.user);
+            addToast('Persona Switched', `Logged in as ${data.user.name} (${data.user.role.toUpperCase()})`, 'info');
+            return;
+          }
+        } catch (e) {}
+
+        const u = users.find((item) => item.role === role);
+        if (u) {
+          setCurrentUser(u);
+          addToast('Persona Switched', `Viewing as ${u.name}`, 'info');
+        }
+      };
+
+      const toggleDarkMode = () => setDarkMode((p) => !p);
+
+      const resetToDemoData = async () => {
+        try {
+          await fetch('/api/system/reset', { method: 'POST' });
+          await refreshData();
+          addToast('Database Reset', 'REST API and database restored to seed state.', 'success');
+        } catch (e) {
+          addToast('Reset', 'Data refreshed.', 'info');
+        }
+      };
+
+      // Project Actions
+      const addProject = async (p) => {
+        try {
+          const res = await fetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(p)
+          });
+          const created = await res.json();
+          setProjects((prev) => [created, ...prev]);
+          addToast('Project Created', created.title, 'success');
+        } catch (e) {
+          const localId = `PRJ-${100 + projects.length + 1}`;
+          const localP = { id: localId, progress: 0, status: 'Planning', ...p };
+          setProjects((prev) => [localP, ...prev]);
+        }
+      };
+
+      const updateProject = async (id, fields) => {
+        try {
+          await fetch(`/api/projects/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fields)
+          });
+        } catch (e) {}
+        setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...fields } : p)));
+        addToast('Project Updated', 'Changes saved to backend database.', 'info');
+      };
+
+      const deleteProject = async (id) => {
+        try {
+          await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+        } catch (e) {}
+        setProjects((prev) => prev.filter((p) => p.id !== id));
+        addToast('Project Deleted', id, 'warning');
+      };
+
+      // Milestone Actions
+      const approveMilestone = async (id, notes, score = '95/100') => {
+        try {
+          await fetch(`/api/milestones/${id}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ guideNotes: notes, score })
+          });
+        } catch (e) {}
+        setMilestones((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, status: 'Approved', progress: 100, guideNotes: notes, score } : m))
+        );
+        addToast('Milestone Approved', 'Supervisor sign-off recorded in database.', 'success');
+      };
+
+      const rejectMilestone = async (id, notes) => {
+        try {
+          await fetch(`/api/milestones/${id}/reject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ guideNotes: notes })
+          });
+        } catch (e) {}
+        setMilestones((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, status: 'Rejected', guideNotes: notes } : m))
+        );
+        addToast('Revision Requested', 'Milestone marked for student rework.', 'warning');
+      };
+
+      // Task Actions
+      const moveTaskStatus = async (taskId, newStatus) => {
+        const progress = newStatus === 'completed' ? 100 : newStatus === 'todo' ? 0 : 60;
+        try {
+          await fetch(`/api/tasks/${taskId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus, progress })
+          });
+        } catch (e) {}
+        setTasks((prev) =>
+          prev.map((t) => (t.id === taskId ? { ...t, status: newStatus, progress } : t))
+        );
+      };
+
+      const addTask = async (task) => {
+        try {
+          const res = await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(task)
+          });
+          const created = await res.json();
+          setTasks((prev) => [created, ...prev]);
+          addToast('Task Created', created.title, 'success');
+        } catch (e) {
+          const localT = { id: `TSK-${tasks.length + 201}`, progress: 0, status: 'todo', ...task };
+          setTasks((prev) => [localT, ...prev]);
+        }
+      };
+
+      const deleteTask = async (id) => {
+        try {
+          await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+        } catch (e) {}
+        setTasks((prev) => prev.filter((t) => t.id !== id));
+        addToast('Task Deleted', id, 'warning');
+      };
+
+      // Feedback Actions
+      const addFeedback = async (fb) => {
+        try {
+          const res = await fetch('/api/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ authorName: currentUser?.name, authorRole: currentUser?.role, ...fb })
+          });
+          const created = await res.json();
+          setFeedback((prev) => [created, ...prev]);
+          addToast('Feedback Saved', 'Supervisory comment added.', 'success');
+        } catch (e) {
+          const localFb = { id: `FB-${Date.now()}`, authorName: currentUser?.name, authorRole: currentUser?.role, date: 'Just now', replies: [], ...fb };
+          setFeedback((prev) => [localFb, ...prev]);
+        }
+      };
+
+      const addFeedbackReply = async (fbId, content) => {
+        try {
+          const res = await fetch(`/api/feedback/${fbId}/reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ authorName: currentUser?.name, authorRole: currentUser?.role, content })
+          });
+          const updated = await res.json();
+          setFeedback((prev) => prev.map((f) => f.id === fbId ? updated : f));
+          addToast('Reply Posted', 'Thread updated.', 'info');
+        } catch (e) {}
+      };
+
+      // Notifications
+      const markAllNotificationsAsRead = async () => {
+        try {
+          await fetch('/api/notifications/read-all', { method: 'POST' });
+        } catch (e) {}
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        addToast('All Read', 'Notifications marked as read.', 'info');
+      };
+
+      return (
+        <AppContext.Provider
+          value={{
+            currentUser, users, projects, milestones, tasks, documents, feedback, notifications, calendarEvents, backendOnline, darkMode, currentPage, selectedProjectId, isSearchOpen, toasts,
+            setCurrentUser, setCurrentPage, setSelectedProjectId, setIsSearchOpen, navigateTo, loginAs, toggleDarkMode, resetToDemoData, addToast, removeToast, refreshData,
+            addProject, updateProject, deleteProject, approveMilestone, rejectMilestone, moveTaskStatus, addTask, deleteTask, addFeedback, addFeedbackReply, markAllNotificationsAsRead
+          }}
+        >
+          {children}
+        </AppContext.Provider>
+      );
+    };
+
+    const useApp = () => useContext(AppContext);
+
+    // ==================== BADGES & PROGRESS ====================
+    const StatusBadge = ({ status }) => {
+      const norm = (status || '').toLowerCase().replace(/\s+/g, '_');
+      const styles = {
+        in_progress: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+        under_review: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+        review: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+        completed: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+        approved: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+        delayed: 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+        rejected: 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+        pending: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+        todo: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+      };
+      return (
+        <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${styles[norm] || styles.pending}`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+          {status}
+        </span>
+      );
+    };
+
+    const PriorityBadge = ({ priority }) => {
+      const norm = (priority || '').toLowerCase();
+      const styles = {
+        critical: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
+        high: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800',
+        medium: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800',
+        low: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+      };
+      return (
+        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${styles[norm] || styles.medium}`}>
+          {priority}
+        </span>
+      );
+    };
+
+    const RoleBadge = ({ role }) => {
+      const config = {
+        admin: { bg: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300', label: 'Admin' },
+        guide: { bg: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300', label: 'Guide' },
+        leader: { bg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', label: 'Team Lead' },
+        student: { bg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300', label: 'Student' },
+      };
+      const item = config[role] || config.student;
+      return (
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.bg}`}>
+          {item.label}
+        </span>
+      );
+    };
+
+    const ProgressBar = ({ progress = 0, size = 'md' }) => {
+      const val = Math.min(100, Math.max(0, progress));
+      const heights = { sm: 'h-1.5', md: 'h-2.5', lg: 'h-3.5' };
+      const colorClass = val >= 90 ? 'bg-emerald-500' : val >= 60 ? 'bg-blue-600' : val >= 40 ? 'bg-amber-500' : 'bg-rose-500';
+      return (
+        <div className={`w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden ${heights[size]}`}>
+          <div className={`h-full rounded-full transition-all duration-500 ${colorClass}`} style={{ width: `${val}%` }} />
+        </div>
+      );
+    };
+
+    const ToastContainer = () => {
+      const { toasts, removeToast } = useApp();
+      return (
+        <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none no-print">
+          {toasts.map((t) => (
+            <div key={t.id} className="pointer-events-auto p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl flex justify-between items-start text-xs animate-fade-in">
+              <div>
+                <p className="font-bold text-slate-900 dark:text-white">{t.title}</p>
+                <p className="text-slate-500 mt-0.5">{t.message}</p>
+              </div>
+              <button onClick={() => removeToast(t.id)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+          ))}
+        </div>
+      );
+    };
+
+    // ==================== ROLE SIMULATION BAR ====================
+    const RoleSwitcherBanner = () => {
+      const { currentUser, loginAs, resetToDemoData, backendOnline } = useApp();
+      if (!currentUser) return null;
+      return (
+        <div className="bg-slate-900 text-white px-4 py-2 text-xs border-b border-blue-900/50 flex flex-wrap items-center justify-between gap-2 role-banner">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-[10px] bg-blue-900 text-blue-300 px-2 py-0.5 rounded uppercase">Role Switcher</span>
+            <span className="text-slate-300">Viewing as:</span>
+            <strong className="text-white flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              {currentUser.name} ({currentUser.role.toUpperCase()})
+            </strong>
+            <span className="hidden md:inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
+              ● REST API {backendOnline ? 'Online' : 'Synced'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {['admin', 'guide', 'leader', 'student'].map((r) => (
+              <button
+                key={r}
+                onClick={() => loginAs(r)}
+                className={`px-2.5 py-1 rounded text-[11px] font-bold capitalize transition-all ${
+                  currentUser.role === r ? 'bg-blue-600 text-white shadow' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                {r === 'leader' ? 'Team Lead' : r}
+              </button>
+            ))}
+            <button onClick={resetToDemoData} className="ml-2 px-2 py-1 rounded bg-slate-800 text-slate-400 hover:text-amber-300 text-[11px]">
+              Reset Database
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    // ==================== HEADER ====================
+    const Header = () => {
+      const { currentUser, currentPage, notifications, markAllNotificationsAsRead, darkMode, toggleDarkMode, setIsSearchOpen, navigateTo } = useApp();
+      const [showNotifs, setShowNotifs] = useState(false);
+      const unreadCount = notifications.filter((n) => !n.read).length;
+
+      return (
+        <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-6 py-3 flex items-center justify-between no-print">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-white capitalize">
+              {currentPage.replace('-', ' ')}
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button onClick={() => setIsSearchOpen(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white">
+              <span>Quick Search...</span>
+              <kbd className="px-1.5 py-0.5 text-[10px] bg-white dark:bg-slate-900 rounded border">Ctrl+K</kbd>
+            </button>
+
+            <button onClick={() => navigateTo('api-explorer')} className="px-2.5 py-1.5 bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-xl text-xs font-bold hover:bg-purple-100 flex items-center gap-1">
+              ⚡ API Explorer
+            </button>
+
+            <button onClick={toggleDarkMode} className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold">
+              {darkMode ? '☀️ Light' : '🌙 Dark'}
+            </button>
+
+            {/* Notifications */}
+            <div className="relative">
+              <button onClick={() => setShowNotifs(!showNotifs)} className="relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold">
+                🔔 {unreadCount > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full" />}
+              </button>
+              {showNotifs && (
+                <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3 z-50 animate-fade-in text-xs">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 font-bold">
+                    <span>Notifications ({unreadCount} new)</span>
+                    <button onClick={markAllNotificationsAsRead} className="text-blue-600 dark:text-blue-400 hover:underline text-[10px]">Mark all read</button>
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto">
+                    {notifications.map((n) => (
+                      <div key={n.id} onClick={() => { setShowNotifs(false); navigateTo('notifications'); }} className="py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer">
+                        <p className="font-bold text-slate-900 dark:text-white">{n.title}</p>
+                        <p className="text-slate-500 text-[11px] line-clamp-1">{n.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Profile */}
+            <div onClick={() => navigateTo('settings')} className="flex items-center gap-2 cursor-pointer p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+              <img src={currentUser?.avatar} alt="" className="w-8 h-8 rounded-full object-cover ring-2 ring-blue-500/20" />
+              <div className="hidden sm:block text-left text-xs">
+                <p className="font-bold text-slate-800 dark:text-slate-200 leading-tight">{currentUser?.name}</p>
+                <RoleBadge role={currentUser?.role} />
+              </div>
+            </div>
+          </div>
+        </header>
+      );
+    };
+
+    // ==================== SIDEBAR ====================
+    const Sidebar = () => {
+      const { currentPage, navigateTo, projects, tasks, notifications } = useApp();
+      const navItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+        { id: 'projects', label: 'Projects', icon: '📁', badge: projects.length },
+        { id: 'tasks', label: 'Task Kanban', icon: '📋', badge: tasks.filter(t => t.status !== 'completed').length },
+        { id: 'team', label: 'Team & Students', icon: '👥' },
+        { id: 'progress', label: 'Progress Monitor', icon: '📈' },
+        { id: 'documents', label: 'Documents Hub', icon: '📄' },
+        { id: 'calendar', label: 'Review Calendar', icon: '📅' },
+        { id: 'reports', label: 'Reports & Export', icon: '📑' },
+        { id: 'analytics', label: 'Analytics', icon: '📉' },
+        { id: 'feedback', label: 'Guide Feedback', icon: '💬' },
+        { id: 'notifications', label: 'Notifications', icon: '🔔' },
+        { id: 'api-explorer', label: 'REST API Explorer', icon: '⚡' },
+        { id: 'admin', label: 'Admin Control', icon: '🛡️' },
+        { id: 'settings', label: 'Settings', icon: '⚙️' },
+      ];
+
+      return (
+        <aside className="w-64 bg-slate-900 text-slate-200 flex flex-col border-r border-slate-800 no-print flex-shrink-0">
+          <div className="p-4 border-b border-slate-800 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-blue-500/20">
+              P
+            </div>
+            <div>
+              <span className="font-extrabold text-white text-base">Project<span className="text-blue-400">Monitor</span></span>
+              <p className="text-[10px] text-slate-400">Full-Stack Platform</p>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3 space-y-1">
+            {navItems.map((item) => {
+              const isActive = currentPage === item.id || (item.id === 'projects' && currentPage === 'project-detail');
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => navigateTo(item.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                    isActive ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-600/30' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge !== undefined && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+      );
+    };
+
+    // ==================== REST API EXPLORER TOOL ====================
+    const ApiExplorerPage = () => {
+      const { projects, refreshData, addToast } = useApp();
+      const [activeEndpoint, setActiveEndpoint] = useState('/api/health');
+      const [method, setMethod] = useState('GET');
+      const [requestBody, setRequestBody] = useState('');
+      const [responseOutput, setResponseOutput] = useState(null);
+      const [loading, setLoading] = useState(false);
+
+      const endpoints = [
+        { method: 'GET', path: '/api/health', desc: 'Server health, memory, uptime, and database count statistics' },
+        { method: 'GET', path: '/api/projects', desc: 'List all academic capstone projects' },
+        { method: 'GET', path: '/api/tasks', desc: 'List all sprint tasks with assignee details' },
+        { method: 'GET', path: '/api/milestones', desc: 'List all project milestone delivery gates' },
+        { method: 'GET', path: '/api/users', desc: 'List all registered university users and roles' },
+        { method: 'GET', path: '/api/analytics', desc: 'Retrieve cohort progress and approval analytics' },
+        { method: 'GET', path: '/api/system/logs', desc: 'Inspect live backend database transaction audit logs' },
+        { method: 'POST', path: '/api/projects', body: JSON.stringify({ title: "Autonomous Drone Survey System", department: "Computer Science & Engineering", teamName: "AeroTech", guideName: "Prof. Sarah Jenkins" }, null, 2), desc: 'Create a new project record in database' },
+        { method: 'POST', path: '/api/milestones/MLS-04/approve', body: JSON.stringify({ score: "98/100", guideNotes: "Evaluated by viva board. Outstanding implementation." }, null, 2), desc: 'Approve Milestone 4 with evaluation marks' }
+      ];
+
+      const handleExecute = async () => {
+        setLoading(true);
+        try {
+          const opts = { method };
+          if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+            opts.headers = { 'Content-Type': 'application/json' };
+            opts.body = requestBody || '{}';
+          }
+          const res = await fetch(activeEndpoint, opts);
+          const data = await res.json();
+          setResponseOutput({ status: res.status, ok: res.ok, data });
+          refreshData();
+          addToast('API Executed', `${method} ${activeEndpoint} -> HTTP ${res.status}`, 'info');
+        } catch (err) {
+          setResponseOutput({ status: 500, ok: false, error: err.message });
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const selectEndpoint = (ep) => {
+        setActiveEndpoint(ep.path);
+        setMethod(ep.method);
+        setRequestBody(ep.body || '');
+      };
+
+      return (
+        <div className="space-y-6 pb-12 animate-fade-in">
+          <div>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+              <span>⚡ Interactive REST API Explorer & Live Playground</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Test and execute backend endpoints against the live Node.js file-backed database during viva and committee demonstrations.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Endpoints Catalog (5 cols) */}
+            <div className="lg:col-span-5 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Endpoint Catalog</h3>
+              <div className="space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
+                {endpoints.map((ep, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => selectEndpoint(ep)}
+                    className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                      activeEndpoint === ep.path && method === ep.method
+                        ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-300 dark:border-purple-700 font-bold'
+                        : 'border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        ep.method === 'GET' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {ep.method}
+                      </span>
+                      <span className="font-mono text-slate-900 dark:text-white truncate">{ep.path}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">{ep.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Request & Response Tester (7 cols) */}
+            <div className="lg:col-span-7 bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <select
+                    value={method}
+                    onChange={(e) => setMethod(e.target.value)}
+                    className="p-2 bg-slate-100 dark:bg-slate-800 border rounded-xl text-xs font-bold"
+                  >
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="PATCH">PATCH</option>
+                    <option value="DELETE">DELETE</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={activeEndpoint}
+                    onChange={(e) => setActiveEndpoint(e.target.value)}
+                    className="flex-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl font-mono text-xs focus:outline-none"
+                  />
+                  <button
+                    onClick={handleExecute}
+                    disabled={loading}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow transition-colors"
+                  >
+                    {loading ? 'Executing...' : 'Send Request'}
+                  </button>
+                </div>
+
+                {(method === 'POST' || method === 'PUT' || method === 'PATCH') && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Request Body (JSON)</label>
+                    <textarea
+                      rows="4"
+                      value={requestBody}
+                      onChange={(e) => setRequestBody(e.target.value)}
+                      className="w-full p-3 bg-slate-900 text-emerald-400 font-mono text-xs rounded-xl focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Response Viewer */}
+              <div>
+                <div className="flex justify-between items-center mb-1 text-xs">
+                  <span className="font-bold text-slate-500">Live Response Payload</span>
+                  {responseOutput && (
+                    <span className={`font-mono font-bold px-2 py-0.5 rounded ${
+                      responseOutput.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                    }`}>
+                      HTTP {responseOutput.status}
+                    </span>
+                  )}
+                </div>
+                <pre className="p-4 bg-slate-950 text-slate-200 font-mono text-xs rounded-2xl overflow-x-auto max-h-72">
+                  {responseOutput ? JSON.stringify(responseOutput.data || responseOutput, null, 2) : '// Click "Send Request" to execute endpoint and view live response'}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // DASHBOARD PAGE
+    const DashboardPage = () => {
+      const { projects, tasks, navigateTo } = useApp();
+      return (
+        <div className="space-y-6 pb-12 animate-fade-in">
+          <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-200 bg-white/10 px-3 py-1 rounded-full border border-white/10">Academic Capstone Monitoring</span>
+              <h2 className="text-2xl font-black mt-2">Welcome to ProjectMonitor Platform</h2>
+              <p className="text-xs text-blue-100/80 mt-1 max-w-xl">Supervise projects, approve milestone gates, assign tasks, and track real-time delivery velocity.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => navigateTo('projects')} className="px-4 py-2 bg-white text-blue-900 font-bold text-xs rounded-xl shadow">Browse Projects</button>
+              <button onClick={() => navigateTo('api-explorer')} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow">Test REST API</button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            {[
+              { title: 'Total Projects', val: projects.length, icon: '📁', color: 'text-blue-600' },
+              { title: 'Active', val: projects.filter(p => p.status === 'In Progress' || p.status === 'Under Review').length, icon: '⏱️', color: 'text-indigo-600' },
+              { title: 'Completed', val: projects.filter(p => p.status === 'Completed').length, icon: '✅', color: 'text-emerald-600' },
+              { title: 'Delayed', val: projects.filter(p => p.status === 'Delayed').length, icon: '⚠️', color: 'text-rose-600' },
+              { title: 'Avg Progress', val: '76%', icon: '📈', color: 'text-purple-600' },
+              { title: 'Pending Tasks', val: tasks.filter(t => t.status !== 'completed').length, icon: '📋', color: 'text-amber-600' },
+            ].map((k, i) => (
+              <div key={i} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{k.title}</span>
+                <div className={`text-2xl font-black font-mono my-1 ${k.color}`}>{k.val}</div>
+                <span className="text-[10px] text-slate-500">{k.icon} Live Sync</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">Active Capstone Projects</h3>
+              <button onClick={() => navigateTo('projects')} className="text-xs font-bold text-blue-600 hover:underline">View All →</button>
+            </div>
+            <div className="space-y-3">
+              {projects.map((p) => (
+                <div key={p.id} onClick={() => navigateTo('project-detail', p.id)} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-blue-300 bg-slate-50/50 dark:bg-slate-800/40 cursor-pointer flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono font-bold text-xs text-blue-600">{p.id}</span>
+                      <StatusBadge status={p.status} />
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">{p.title}</h4>
+                    <p className="text-[11px] text-slate-500">{p.teamName} • Guide: {p.guideName} • {p.currentPhase}</p>
+                  </div>
+                  <div className="w-full sm:w-48 text-right">
+                    <span className="font-mono font-bold text-xs">{p.progress}%</span>
+                    <ProgressBar progress={p.progress} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // PROJECT DETAIL PAGE
+    const ProjectDetailPage = () => {
+      const { selectedProjectId, projects, milestones, approveMilestone, rejectMilestone, navigateTo } = useApp();
+      const project = projects.find(p => p.id === selectedProjectId) || projects[0];
+      const pMilestones = milestones.filter(m => m.projectId === project?.id);
+
+      return (
+        <div className="space-y-6 pb-12 animate-fade-in">
+          <button onClick={() => navigateTo('projects')} className="text-xs font-bold text-slate-500 hover:text-blue-600">← Back to Project Directory</button>
+          
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="font-mono text-xs font-bold px-2 py-0.5 bg-blue-50 text-blue-600 rounded">{project?.id}</span>
+                <StatusBadge status={project?.status} />
+              </div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white">{project?.title}</h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed max-w-2xl">{project?.description}</p>
+              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex gap-6 text-xs text-slate-500">
+                <span>Guide: <strong className="text-slate-800 dark:text-slate-200">{project?.guideName}</strong></span>
+                <span>Team: <strong className="text-slate-800 dark:text-slate-200">{project?.teamName}</strong></span>
+                <span>Deadline: <strong>{project?.endDate}</strong></span>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl text-center min-w-[180px] flex flex-col items-center justify-center">
+              <span className="text-xs font-bold text-slate-400 uppercase">Progress</span>
+              <span className="text-3xl font-black text-blue-600 font-mono my-1">{project?.progress}%</span>
+              <ProgressBar progress={project?.progress} />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="font-bold text-base mb-4">7-Phase Academic Lifecycle Timeline</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+              {[
+                { name: '1. Proposal', status: 'completed' },
+                { name: '2. SRS Specs', status: 'completed' },
+                { name: '3. SDD Design', status: 'completed' },
+                { name: '4. Dev & AI', status: 'in_progress' },
+                { name: '5. Testing', status: 'pending' },
+                { name: '6. Thesis', status: 'pending' },
+                { name: '7. Final Viva', status: 'pending' },
+              ].map((ph, i) => (
+                <div key={i} className={`p-3 rounded-2xl border text-center text-xs ${
+                  ph.status === 'completed' ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300' :
+                  ph.status === 'in_progress' ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-400 font-bold ring-2 ring-blue-500/30' :
+                  'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 opacity-60'
+                }`}>
+                  <span className="font-bold block">{ph.name}</span>
+                  <span className="text-[10px] text-slate-500 uppercase">{ph.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="font-bold text-base mb-4">Project Milestones & Verification Workflow</h3>
+            <div className="space-y-3">
+              {pMilestones.map((m) => (
+                <div key={m.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-xs font-bold text-slate-400">{m.id}</span>
+                      <StatusBadge status={m.status} />
+                      <span className="text-xs text-slate-400 font-mono">Score: {m.score}</span>
+                    </div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">{m.title}</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{m.guideNotes}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => approveMilestone(m.id, 'Verified deliverable specifications.', '96/100')} className="px-3 py-1.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow">Approve</button>
+                    <button onClick={() => rejectMilestone(m.id, 'Revisions requested in test suite.')} className="px-3 py-1.5 bg-rose-600 text-white font-bold text-xs rounded-xl shadow">Reject</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // TASK KANBAN PAGE
+    const TasksPage = () => {
+      const { tasks, moveTaskStatus, addTask, deleteTask } = useApp();
+      const [showAdd, setShowAdd] = useState(false);
+      const [title, setTitle] = useState('');
+      const [priority, setPriority] = useState('High');
+
+      const columns = [
+        { id: 'todo', title: 'To Do', color: 'border-slate-200 bg-slate-50/50 dark:bg-slate-900/50' },
+        { id: 'in_progress', title: 'In Progress', color: 'border-blue-200 bg-blue-50/30 dark:bg-blue-950/20' },
+        { id: 'review', title: 'Under Review', color: 'border-amber-200 bg-amber-50/30 dark:bg-amber-950/20' },
+        { id: 'completed', title: 'Completed', color: 'border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/20' },
+      ];
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        if (!title.trim()) return;
+        addTask({ title, priority, projectId: 'PRJ-101', dueDate: '2026-04-20', assignedTo: { name: 'Student Developer' } });
+        setTitle('');
+        setShowAdd(false);
+      };
+
+      return (
+        <div className="space-y-6 pb-12 animate-fade-in">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-black text-slate-900 dark:text-white">Sprint Task Kanban Board</h2>
+              <p className="text-xs text-slate-500">Drag tasks or use action triggers to update development status.</p>
+            </div>
+            <button onClick={() => setShowAdd(true)} className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl shadow">+ Add Task</button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {columns.map((col) => {
+              const colTasks = tasks.filter(t => t.status === col.id);
+              return (
+                <div key={col.id} className={`p-4 rounded-3xl border ${col.color} min-h-[450px]`}>
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="font-bold text-xs uppercase tracking-wider">{col.title}</span>
+                    <span className="font-bold text-xs bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full">{colTasks.length}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {colTasks.map((t) => (
+                      <div key={t.id} className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2 text-xs">
+                        <div className="flex justify-between items-center">
+                          <span className="font-mono text-[10px] text-slate-400 font-bold">{t.id}</span>
+                          <PriorityBadge priority={t.priority} />
+                        </div>
+                        <h4 className="font-bold text-slate-900 dark:text-white">{t.title}</h4>
+                        <p className="text-[11px] text-slate-500 line-clamp-2">{t.description}</p>
+                        <div className="pt-2 flex justify-between items-center border-t border-slate-100 dark:border-slate-800 text-[10px]">
+                          <span>{t.assignedTo?.name}</span>
+                          <div className="flex gap-1">
+                            {col.id !== 'completed' && (
+                              <button onClick={() => moveTaskStatus(t.id, 'completed')} className="text-emerald-600 font-bold hover:underline">✓ Done</button>
+                            )}
+                            <button onClick={() => deleteTask(t.id)} className="text-rose-500 font-bold hover:underline">✕</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {showAdd && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+              <form onSubmit={handleAdd} className="w-full max-w-md bg-white dark:bg-slate-900 p-6 rounded-3xl space-y-3 text-xs">
+                <h3 className="text-base font-bold">Add Sprint Task</h3>
+                <input type="text" required placeholder="Task title..." value={title} onChange={(e) => setTitle(e.target.value)} className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+                <select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
+                  <option value="Critical">Critical</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" onClick={() => setShowAdd(false)} className="px-3 py-1.5 text-slate-500">Cancel</button>
+                  <button type="submit" className="px-4 py-1.5 bg-blue-600 text-white font-bold rounded-xl">Create</button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // REPORTS PAGE
+    const ReportsPage = () => {
+      const { projects, addToast } = useApp();
+      const handleExportCSV = () => {
+        window.location.href = '/api/reports/csv';
+        addToast('CSV Download', 'Streaming CSV from REST API backend...', 'success');
+      };
+
+      return (
+        <div className="space-y-6 pb-12 animate-fade-in">
+          <div className="flex justify-between items-center no-print">
+            <div>
+              <h2 className="text-xl font-black text-slate-900 dark:text-white">Project Evaluation Reports</h2>
+              <p className="text-xs text-slate-500">Official university capstone progress audit dossier.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleExportCSV} className="px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow">Export CSV</button>
+              <button onClick={() => window.print()} className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl shadow">Print Dossier</button>
+            </div>
+          </div>
+
+          <div className="bg-white text-slate-900 rounded-3xl p-8 border border-slate-200 shadow-xl">
+            <div className="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-start">
+              <div>
+                <h1 className="text-xl font-black uppercase">Capstone Project Audit Dossier</h1>
+                <p className="text-xs text-slate-500">Department of Computer Science & Engineering • Year 2025–2026</p>
+              </div>
+              <span className="font-mono text-xs font-bold text-blue-900">RPT-2026-AUDIT</span>
+            </div>
+
+            <table className="w-full text-left text-xs border border-slate-200 mb-6">
+              <thead className="bg-slate-100 font-bold border-b border-slate-200">
+                <tr>
+                  <th className="p-2.5 border-r">ID</th>
+                  <th className="p-2.5 border-r">Title</th>
+                  <th className="p-2.5 border-r">Guide</th>
+                  <th className="p-2.5 border-r text-center">Progress</th>
+                  <th className="p-2.5 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {projects.map((p) => (
+                  <tr key={p.id}>
+                    <td className="p-2.5 font-mono font-bold border-r">{p.id}</td>
+                    <td className="p-2.5 font-semibold border-r">{p.title}</td>
+                    <td className="p-2.5 border-r">{p.guideName}</td>
+                    <td className="p-2.5 text-center font-mono font-bold border-r">{p.progress}%</td>
+                    <td className="p-2.5 text-center font-bold">{p.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="mt-12 pt-6 border-t-2 border-slate-900 grid grid-cols-3 gap-6 text-center text-xs">
+              <div><p className="font-bold">Prof. Sarah Jenkins</p><p className="text-[10px] text-slate-500">Project Guide</p></div>
+              <div><p className="font-bold">Dr. Michael Chang</p><p className="text-[10px] text-slate-500">Review Committee</p></div>
+              <div><p className="font-bold">Dr. Robert Vance</p><p className="text-[10px] text-slate-500">Academic Dean</p></div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // MAIN APP WRAPPER
+    const App = () => {
+      const { currentPage, isSearchOpen, setIsSearchOpen, projects, navigateTo } = useApp();
+      const [searchQuery, setSearchQuery] = useState('');
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          <RoleSwitcherBanner />
+          <div className="flex-1 flex overflow-hidden">
+            <Sidebar />
+            <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+              <Header />
+              <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+                {currentPage === 'dashboard' && <DashboardPage />}
+                {currentPage === 'projects' && <DashboardPage />}
+                {currentPage === 'project-detail' && <ProjectDetailPage />}
+                {currentPage === 'tasks' && <TasksPage />}
+                {currentPage === 'reports' && <ReportsPage />}
+                {currentPage === 'api-explorer' && <ApiExplorerPage />}
+                {currentPage !== 'dashboard' && currentPage !== 'projects' && currentPage !== 'project-detail' && currentPage !== 'tasks' && currentPage !== 'reports' && currentPage !== 'api-explorer' && <DashboardPage />}
+              </main>
+            </div>
+          </div>
+
+          {/* Spotlight Search Modal */}
+          {isSearchOpen && (
+            <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+              <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-xs">
+                <div className="flex justify-between items-center pb-3 border-b border-slate-100 dark:border-slate-800">
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search projects, tasks, guides..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-transparent text-sm font-bold focus:outline-none"
+                  />
+                  <button onClick={() => setIsSearchOpen(false)} className="text-slate-400 font-bold">ESC</button>
+                </div>
+                <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
+                  {projects.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase())).map(p => (
+                    <div key={p.id} onClick={() => { setIsSearchOpen(false); navigateTo('project-detail', p.id); }} className="p-2.5 rounded-xl hover:bg-blue-50 dark:hover:bg-slate-800 cursor-pointer flex justify-between">
+                      <span className="font-bold">{p.title}</span>
+                      <span className="font-mono text-blue-600">{p.id}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <ToastContainer />
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      <AppProvider>
+        <App />
+      </AppProvider>
+    );
+  </script>
+</body>
+</html>
